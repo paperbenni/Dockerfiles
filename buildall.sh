@@ -1,8 +1,11 @@
 #!/bin/bash
 for DOCKER in ./*; do
-	if [ -e "$DOCKER/build.sh" ]; then
-		bash "$DOCKER/build.sh"
-	fi
-    sleep 1
-    echo "next one!"
+    DOCKERNAME=${DOCKER#./}
+    if ! [ -e "$DOCKER/Dockerfile" ]; then
+        continue
+    fi
+    cd "$DOCKER"
+    docker build -t paperbenni/"$DOCKERNAME" .
+    docker push paperbenni/"$DOCKERNAME"
+    cd ..
 done
