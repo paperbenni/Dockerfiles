@@ -1,3 +1,3 @@
 # Dockerfiles
 
-This is just a collection of base dockerfiles i use
+This is just a collection of dockerfiles i use
