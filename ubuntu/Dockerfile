@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM ubuntu:kinetic-20220830
 RUN mkdir -p /home/user
 ENV HOME=/home/user
 WORKDIR /home/user
