@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM ubuntu:22.04
 RUN mkdir -p /home/user
 ENV HOME=/home/user
 WORKDIR /home/user
