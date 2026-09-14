@@ -1,0 +1,23 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run repository checks
+        run: >-
+          docker run --rm
+          --volume "$PWD:/work:ro"
+          --workdir /work
+          alpine:edge
+          sh -c 'apk add --no-cache bash just shellcheck shfmt >/dev/null && just check'

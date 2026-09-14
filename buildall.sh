@@ -6,8 +6,9 @@ for DOCKER in ./*; do
     if ! [ -e "$DOCKER/Dockerfile" ]; then
         continue
     fi
-    cd "$DOCKER"
-    docker build -t paperbenni/"$DOCKERNAME" .
-    docker push paperbenni/"$DOCKERNAME"
-    cd ..
+    (
+        cd "$DOCKER" || exit
+        docker build -t paperbenni/"$DOCKERNAME" .
+        docker push paperbenni/"$DOCKERNAME"
+    )
 done

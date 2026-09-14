@@ -5,7 +5,7 @@ RUN wget -O /usr/bin/serveo 'https://storage.googleapis.com/serveo/download/2018
     chmod +x /usr/bin/serveo
 
 RUN apk add expect
-COPY keygen.sh /usr/bin/keygen.sh
+COPY keygen.expect /usr/bin/keygen.expect
 COPY start.sh start.sh
 RUN chmod +x start.sh
 

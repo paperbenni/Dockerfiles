@@ -1,10 +1,10 @@
 #!/bin/bash
 
-DOCKERNAME="$(ls | fzf)"
+DOCKERNAME="$(find . -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | fzf)"
 [ -z "$DOCKERNAME" ] && exit
 [ -e ./"$DOCKERNAME/Dockerfile" ] || exit 1
 
-cd "$DOCKERNAME"
+cd "$DOCKERNAME" || exit
 DOCKERUSER="$(docker info | grep Username | head -1 | sed 's/^[^:]*: //g')"
 
 [ -z "$DOCKERUSER" ] && {
@@ -13,4 +13,3 @@ DOCKERUSER="$(docker info | grep Username | head -1 | sed 's/^[^:]*: //g')"
 }
 
 docker build -t "$DOCKERUSER"/"$DOCKERNAME" .
-
