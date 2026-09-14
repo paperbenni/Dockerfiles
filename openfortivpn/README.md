@@ -14,12 +14,12 @@ or company Forti VPN.
 
 - Config through environment variables (no config files to write).
 - Simple username/password login (realm, OTP, client certificates optional).
-- Automatic reconnect loop with freshly built config.
-- Killswitch firewall: if the tunnel drops, traffic cannot leak out of the
-  physical interface.
-- NAT + MSS clamping for containers using it as a gateway.
+- Automatic reconnect loop that rereads password and OTP secret files.
+- Fail-closed IPv4/IPv6 killswitch firewall with a narrowly scoped exception
+  for Docker's embedded DNS resolver.
+- Optional NAT + MSS clamping when used as a routed gateway.
 - Healthcheck based on the tunnel interface.
-- Multi-arch: `linux/amd64` and `linux/arm64`.
+- Multi-arch OCI image: `linux/amd64`, `linux/arm64`, and `linux/arm/v7`.
 
 ## Quick start
 
@@ -81,7 +81,7 @@ services:
       VPN_HOST: vpn.uni-freiburg.de
       VPN_USER: youruser
       VPN_PASSWORD: yourpassword
-      # VPN_TRUSTED_CERT: "aa:bb:..."   # if the gateway uses a self-signed cert
+      # VPN_TRUSTED_CERT: "aabb..."   # 64 hex characters, without colons
     restart: unless-stopped
 
   myservice:
@@ -112,10 +112,10 @@ services:
 | `VPN_CLIENT_KEY` | *(empty)* | Client key for certificate auth. |
 | `VPN_CA_FILE` | *(empty)* | Custom CA bundle. |
 | `VPN_SNI` | *(empty)* | TLS SNI to send. |
-| `VPN_INSECURE_SSL` | `0` | Set to `1` to skip certificate verification (not recommended). |
+| `VPN_INSECURE_SSL` | `0` | Allow legacy TLS protocols/ciphers. This does **not** disable certificate verification. |
 | `VPN_MIN_TLS` | *(empty)* | Minimum TLS version, e.g. `1.2`. |
 | `VPN_SET_DNS` | `0` | Let openfortivpn rewrite `/etc/resolv.conf` with the DNS servers pushed by the gateway. |
-| `VPN_PPPD_PEERDNS` | `1` | Let pppd pick up peer DNS. |
+| `VPN_PPPD_PEERDNS` | `0` | Let pppd pick up peer DNS. Leave disabled when openfortivpn or `DNS_SERVERS` manages DNS. |
 | `VPN_HALF_INTERNET_ROUTES` | `0` | openfortivpn `half-internet-routes`. |
 | `VPN_FULL_TUNNEL` | `on` | Route *all* traffic through the tunnel (`on`/`off`). |
 | `VPN_RECONNECT_DELAY` | `5` | Seconds between reconnect attempts. |
@@ -138,23 +138,31 @@ openssl s_client -connect vpn.uni-freiburg.de:443 -servername vpn.uni-freiburg.d
 ```
 
 Otherwise the first `openfortivpn` run prints the digest it saw in the logs.
-As a last resort `VPN_INSECURE_SSL=1` disables verification.
+`VPN_INSECURE_SSL=1` only enables legacy TLS protocols and ciphers; it does not
+disable certificate verification.
 
 ## Killswitch
 
-When `FIREWALL_ENABLED=on` (default) the container starts with an `iptables`
-policy of `DROP` for `OUTPUT` and `FORWARD`. Only these are allowed:
+When `FIREWALL_ENABLED=on` (default), dedicated firewall chains reject output
+and forwarded traffic unless it is one of the following:
 
 - loopback and already-established connections,
 - traffic leaving through the `ppp+` tunnel interface,
 - the control channel to the resolved VPN gateway IP and port on the physical
   interface,
-- DNS and DHCP on the physical interface (so reconnects and name resolution
-  keep working),
 - forwarded traffic between the tunnel and the local interface.
 
-If the tunnel drops, nothing can escape through the physical interface, so
-containers attached to this one are cut off rather than leaking.
+The gateway is resolved and pinned before the firewall is installed, so a
+failed initial lookup stops the container rather than opening the gateway port
+to arbitrary addresses. IPv6 output is blocked because this image establishes
+an IPv4 PPP tunnel.
+
+Docker's embedded DNS resolver (`127.0.0.11`) is reached over loopback and is
+therefore still available while the tunnel is down. Docker forwards those
+queries outside the container's network namespace. This preserves Compose
+service discovery and reconnect behavior, but means DNS queries are the one
+intentional exception to the killswitch. Set `VPN_SET_DNS=1` or `DNS_SERVERS`
+to use DNS supplied/reachable through the VPN while connected.
 
 ## Switching the killswitch off
 
@@ -165,11 +173,10 @@ example if you already manage firewall rules somewhere else).
 
 - The image uses Alpine's `edge`/`testing` repositories because that is where
   `openfortivpn` lives. It may occasionally break; pin a digest if you care.
-- Only IPv4 is handled by the killswitch.
 - DNS is left to Docker by default (`VPN_SET_DNS=0`) so that resolving the
-  gateway keeps working across reconnects. If your service needs names that
-  only the VPN's DNS can resolve, set `VPN_SET_DNS=1` or point `DNS_SERVERS`
-  at the VPN's resolver.
+  gateway and Compose service names keep working across reconnects. This is a
+  deliberate DNS exception to the traffic killswitch. If your service needs
+  private DNS, set `VPN_SET_DNS=1` or point `DNS_SERVERS` at the VPN resolver.
 - Routing *all* traffic (`VPN_FULL_TUNNEL=on`) replaces the default route with
   the tunnel. If you only need the networks the gateway pushes, set it to
   `off` and openfortivpn will install just the routes it is told to.

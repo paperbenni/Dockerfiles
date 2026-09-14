@@ -31,7 +31,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh
 # Sensible defaults; everything can be overridden at runtime.
 ENV VPN_PORT=443 \
     VPN_SET_DNS=0 \
-    VPN_PPPD_PEERDNS=1 \
+    VPN_PPPD_PEERDNS=0 \
     VPN_HALF_INTERNET_ROUTES=0 \
     VPN_INSECURE_SSL=0 \
     VPN_FULL_TUNNEL=on \

@@ -18,7 +18,7 @@ fi
 
 target="${HEALTHCHECK_TARGET:-}"
 if [ -n "$target" ]; then
-    if ! ping -c1 -W3 "$target" >/dev/null 2>&1; then
+    if ! ping -I "$iface" -c1 -W3 "$target" >/dev/null 2>&1; then
         echo "unhealthy: cannot reach $target through the tunnel"
         exit 1
     fi
