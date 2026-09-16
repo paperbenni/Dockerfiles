@@ -313,7 +313,7 @@ setup_ipv6_firewall() {
 apply_exclude_routes() {
     local routes="${VPN_EXCLUDE_ROUTES//,/ }"
     local cidr
-    [ -z "${routes// }" ] && return 0
+    [ -z "${routes// /}" ] && return 0
     for cidr in $routes; do
         if [ -n "$UPLINK_GW" ]; then
             if ip route replace "$cidr" via "$UPLINK_GW" dev "$UPLINK_DEV" 2>/dev/null; then
@@ -344,36 +344,66 @@ POLICY_MARK="0x1"
 # Unmarked (locally initiated) traffic keeps using the main table, i.e. the
 # tunnel: no leak. Same idea as Gluetun's inbound policy table.
 setup_policy_routing() {
-    [ -n "$UPLINK_DEV" ] || { warn "skipping policy routing: no uplink device"; return 0; }
+    [ -n "$UPLINK_DEV" ] || {
+        warn "skipping policy routing: no uplink device"
+        return 0
+    }
     if [ -n "$UPLINK_GW" ]; then
         ip route replace default via "$UPLINK_GW" dev "$UPLINK_DEV" table "$POLICY_TABLE" 2>/dev/null \
-            || { warn "could not set policy table default route"; return 0; }
+            || {
+                warn "could not set policy table default route"
+                return 0
+            }
     else
         ip route replace default dev "$UPLINK_DEV" table "$POLICY_TABLE" 2>/dev/null \
-            || { warn "could not set policy table default route"; return 0; }
+            || {
+                warn "could not set policy table default route"
+                return 0
+            }
     fi
     if ! ip rule show 2>/dev/null | grep -q "fwmark $POLICY_MARK.*lookup $POLICY_TABLE"; then
         ip rule add fwmark "$POLICY_MARK" table "$POLICY_TABLE" 2>/dev/null \
-            || { warn "policy routing unavailable (ip rule failed)"; return 0; }
+            || {
+                warn "policy routing unavailable (ip rule failed)"
+                return 0
+            }
     fi
     "$IPT" -t mangle -N OFV_PREROUTING 2>/dev/null \
         || "$IPT" -t mangle -F OFV_PREROUTING 2>/dev/null \
-        || { warn "could not prepare mangle/OFV_PREROUTING"; return 0; }
+        || {
+            warn "could not prepare mangle/OFV_PREROUTING"
+            return 0
+        }
     "$IPT" -t mangle -C PREROUTING -j OFV_PREROUTING >/dev/null 2>&1 \
         || "$IPT" -t mangle -I PREROUTING 1 -j OFV_PREROUTING 2>/dev/null \
-        || { warn "could not attach mangle PREROUTING chain"; return 0; }
+        || {
+            warn "could not attach mangle PREROUTING chain"
+            return 0
+        }
     "$IPT" -t mangle -C OFV_PREROUTING -i "$UPLINK_DEV" -m conntrack --ctstate NEW -j CONNMARK --set-mark "$POLICY_MARK" >/dev/null 2>&1 \
         || "$IPT" -t mangle -A OFV_PREROUTING -i "$UPLINK_DEV" -m conntrack --ctstate NEW -j CONNMARK --set-mark "$POLICY_MARK" 2>/dev/null \
-        || { warn "could not add inbound marking rule"; return 0; }
+        || {
+            warn "could not add inbound marking rule"
+            return 0
+        }
     "$IPT" -t mangle -N OFV_MARK_OUT 2>/dev/null \
         || "$IPT" -t mangle -F OFV_MARK_OUT 2>/dev/null \
-        || { warn "could not prepare mangle/OFV_MARK_OUT"; return 0; }
+        || {
+            warn "could not prepare mangle/OFV_MARK_OUT"
+            return 0
+        }
     "$IPT" -t mangle -C OUTPUT -j OFV_MARK_OUT >/dev/null 2>&1 \
         || "$IPT" -t mangle -I OUTPUT 1 -j OFV_MARK_OUT 2>/dev/null \
-        || { warn "could not attach mangle OUTPUT chain"; return 0; }
+        || {
+            warn "could not attach mangle OUTPUT chain"
+            return 0
+        }
     "$IPT" -t mangle -C OFV_MARK_OUT -j CONNMARK --restore-mark >/dev/null 2>&1 \
         || "$IPT" -t mangle -A OFV_MARK_OUT -j CONNMARK --restore-mark 2>/dev/null \
-        || { warn "could not add mark restore rule"; return 0; }
+        || {
+            warn "could not add mark restore rule"
+            return 0
+        }
     log "policy routing ready: inbound replies via $UPLINK_DEV (table $POLICY_TABLE)"
 }
 
