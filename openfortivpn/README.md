@@ -118,11 +118,13 @@ services:
 | `VPN_PPPD_PEERDNS` | `0` | Let pppd pick up peer DNS. Leave disabled when openfortivpn or `DNS_SERVERS` manages DNS. |
 | `VPN_HALF_INTERNET_ROUTES` | `0` | openfortivpn `half-internet-routes`. |
 | `VPN_FULL_TUNNEL` | `on` | Route *all* traffic through the tunnel (`on`/`off`). |
-| `VPN_EXCLUDE_ROUTES` | `100.64.0.0/10` | Comma-separated subnets kept on the physical uplink for locally initiated traffic (e.g. Tailscale, LAN). |
+| `VPN_SET_ROUTES` | `1` | Install routes pushed by the gateway (`1`/`0`). With `0`, only `VPN_ROUTES` use the tunnel. |
+| `VPN_ROUTES` | *(empty)* | Extra IPv4 subnets routed through the tunnel, e.g. `132.230.0.0/16`. Host bits are normalized. |
+| `VPN_EXCLUDE_ROUTES` | `100.64.0.0/10` | Comma-separated IPv4 subnets kept on the physical uplink for locally initiated traffic (e.g. Tailscale, LAN). Host bits are normalized. |
 | `VPN_RECONNECT_DELAY` | `5` | Seconds between reconnect attempts. |
 | `VPN_EXTRA_ARGS` | *(empty)* | Extra flags appended to the `openfortivpn` command. |
 | `FIREWALL_ENABLED` | `on` | Enable the killswitch firewall. |
-| `LAN_IFACE` | auto-detected | Physical interface used for the control channel. |
+| `LAN_IFACE` | auto-detected | LAN-side interface for traffic forwarded back from the tunnel. The VPN control uplink is detected from the initial default route. |
 | `LAN_SUBNET` | *(empty)* | Restrict forwarded traffic to this source subnet. |
 | `DNS_SERVERS` | *(empty)* | Comma-separated DNS servers written to `/etc/resolv.conf` once up. |
 | `HEALTHCHECK_TARGET` | *(empty)* | Optional host that must be pingable through the tunnel. |
@@ -144,26 +146,29 @@ disable certificate verification.
 
 ## Killswitch
 
-When `FIREWALL_ENABLED=on` (default), dedicated firewall chains reject output
-and forwarded traffic unless it is one of the following:
+When `FIREWALL_ENABLED=on` (default), dedicated firewall chains reject output,
+input, and forwarded traffic unless it is one of the following:
 
-- loopback and already-established connections,
+- loopback traffic and replies to permitted inbound connections,
+- inbound traffic to published ports (matched by connection state, no port
+  list needed) and from directly attached subnets,
 - traffic leaving through the `ppp+` tunnel interface,
 - the control channel to the resolved VPN gateway IP and port on the physical
   interface,
 - forwarded traffic between the tunnel and the local interface.
 
-The gateway is resolved and pinned before the firewall is installed, so a
-failed initial lookup stops the container rather than opening the gateway port
-to arbitrary addresses. IPv6 output is blocked because this image establishes
-an IPv4 PPP tunnel.
+The firewall is installed before the gateway is resolved. The configured DNS
+resolvers are opened first; afterward, only the resolved gateway addresses are
+opened for the VPN control connection and pinned to the physical uplink. A
+failed lookup leaves the rest of the killswitch closed. IPv6 output is blocked
+because this image establishes an IPv4 PPP tunnel.
 
-Docker's embedded DNS resolver (`127.0.0.11`) is reached over loopback and is
-therefore still available while the tunnel is down. Docker forwards those
-queries outside the container's network namespace. This preserves Compose
-service discovery and reconnect behavior, but means DNS queries are the one
-intentional exception to the killswitch. Set `VPN_SET_DNS=1` or `DNS_SERVERS`
-to use DNS supplied/reachable through the VPN while connected.
+The IPv4 resolvers in `/etc/resolv.conf` are pinned to the physical uplink and
+allowed only on TCP/UDP port 53. This includes Docker's embedded resolver when
+present and preserves Compose service discovery and reconnect behavior, but
+means DNS queries are the one intentional exception to the killswitch. Set
+`VPN_SET_DNS=1` or `DNS_SERVERS` to use DNS supplied/reachable through the VPN
+while connected.
 
 ## Published ports stay reachable
 
@@ -171,12 +176,16 @@ Replies to inbound connections (published ports reached from LAN,
 Tailscale, ...) are automatically routed back via the physical uplink using
 connection marking and a dedicated policy-routing table. No configuration
 needed, and it works with a full-tunnel default route. Locally initiated
-traffic still uses the tunnel.
+traffic still uses the tunnel. Routing is reconciled every 10 seconds while
+connected, so routes rewritten by `pppd` are repaired automatically.
 
 ## Switching the killswitch off
 
-Set `FIREWALL_ENABLED=off` if you do not want the firewall rules at all (for
-example if you already manage firewall rules somewhere else).
+Set `FIREWALL_ENABLED=off` if you do not want this container to install any
+iptables rules (for example if you already manage them somewhere else). This
+also disables automatic connection marking for published-port replies; your
+external firewall/routing setup must handle those replies when full-tunnel
+routing is enabled.
 
 ## Notes and limitations
 

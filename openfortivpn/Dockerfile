@@ -18,15 +18,16 @@ RUN printf '%s\n' \
       iptables \
       iptables-legacy \
       iproute2 \
-      bash \
+      python3 \
+      openresolv \
       ca-certificates \
       tzdata \
  && mkdir -p /etc/openfortivpn \
  && rm -rf /var/cache/apk/*
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker-entrypoint.py /usr/local/bin/docker-entrypoint.py
 COPY healthcheck.sh /usr/local/bin/healthcheck.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.py /usr/local/bin/healthcheck.sh
 
 # Sensible defaults; everything can be overridden at runtime.
 ENV VPN_PORT=443 \
@@ -44,4 +45,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ["/usr/local/bin/healthcheck.sh"]
 
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.py"]

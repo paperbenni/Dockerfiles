@@ -20,4 +20,4 @@ jobs:
           --volume "$PWD:/work:ro"
           --workdir /work
           alpine:edge
-          sh -c 'apk add --no-cache bash just shellcheck shfmt >/dev/null && just check'
+          sh -c 'apk add --no-cache bash just shellcheck shfmt uv >/dev/null && just check'

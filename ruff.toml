@@ -1,0 +1,4 @@
+# Python lint standard for this repo (openfortivpn entrypoint).
+# Kept explicit so `ruff check` behaves identically locally and in CI.
+[lint]
+select = ["E", "F", "UP", "SIM", "PLW", "EXE"]
