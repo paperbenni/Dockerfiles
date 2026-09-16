@@ -45,6 +45,7 @@ VPN_HALF_INTERNET_ROUTES="${VPN_HALF_INTERNET_ROUTES:-0}"
 VPN_INSECURE_SSL="${VPN_INSECURE_SSL:-0}"
 VPN_MIN_TLS="${VPN_MIN_TLS:-}"
 VPN_FULL_TUNNEL="${VPN_FULL_TUNNEL:-on}"
+VPN_EXCLUDE_ROUTES="${VPN_EXCLUDE_ROUTES:-100.64.0.0/10}"
 VPN_RECONNECT_DELAY="${VPN_RECONNECT_DELAY:-5}"
 VPN_EXTRA_ARGS="${VPN_EXTRA_ARGS:-}"
 
@@ -305,6 +306,77 @@ setup_ipv6_firewall() {
 # ---------------------------------------------------------------------------
 # Tunnel lifecycle
 # ---------------------------------------------------------------------------
+# Keep listed subnets on the physical uplink even when the VPN pushes a
+# default route (e.g. Tailscale's 100.64.0.0/10, which must never go through
+# the tunnel or management access breaks). Runs after openfortivpn installs
+# its routes so excludes win.
+apply_exclude_routes() {
+    local routes="${VPN_EXCLUDE_ROUTES//,/ }"
+    local cidr
+    [ -z "${routes// }" ] && return 0
+    for cidr in $routes; do
+        if [ -n "$UPLINK_GW" ]; then
+            if ip route replace "$cidr" via "$UPLINK_GW" dev "$UPLINK_DEV" 2>/dev/null; then
+                log "excluded $cidr from tunnel via $UPLINK_DEV"
+            else
+                warn "could not exclude $cidr from tunnel"
+            fi
+        else
+            if ip route replace "$cidr" dev "$UPLINK_DEV" 2>/dev/null; then
+                log "excluded $cidr from tunnel via $UPLINK_DEV"
+            else
+                warn "could not exclude $cidr from tunnel"
+            fi
+        fi
+    done
+}
+
+POLICY_TABLE="200"
+POLICY_MARK="0x1"
+
+# Replies to inbound connections (published ports reached from LAN,
+# Tailscale, ...) must leave via the physical uplink even when the VPN owns
+# the main-table default route. Without this, return traffic disappears into
+# the tunnel and the service looks dead from outside while working locally.
+# Mark inbound connections and route marked replies through a dedicated table
+# holding the original default route. CONNMARK survives reconnects and table
+# 200 is never touched by openfortivpn/pppd, so this is set up once.
+# Unmarked (locally initiated) traffic keeps using the main table, i.e. the
+# tunnel: no leak. Same idea as Gluetun's inbound policy table.
+setup_policy_routing() {
+    [ -n "$UPLINK_DEV" ] || { warn "skipping policy routing: no uplink device"; return 0; }
+    if [ -n "$UPLINK_GW" ]; then
+        ip route replace default via "$UPLINK_GW" dev "$UPLINK_DEV" table "$POLICY_TABLE" 2>/dev/null \
+            || { warn "could not set policy table default route"; return 0; }
+    else
+        ip route replace default dev "$UPLINK_DEV" table "$POLICY_TABLE" 2>/dev/null \
+            || { warn "could not set policy table default route"; return 0; }
+    fi
+    if ! ip rule show 2>/dev/null | grep -q "fwmark $POLICY_MARK.*lookup $POLICY_TABLE"; then
+        ip rule add fwmark "$POLICY_MARK" table "$POLICY_TABLE" 2>/dev/null \
+            || { warn "policy routing unavailable (ip rule failed)"; return 0; }
+    fi
+    "$IPT" -t mangle -N OFV_PREROUTING 2>/dev/null \
+        || "$IPT" -t mangle -F OFV_PREROUTING 2>/dev/null \
+        || { warn "could not prepare mangle/OFV_PREROUTING"; return 0; }
+    "$IPT" -t mangle -C PREROUTING -j OFV_PREROUTING >/dev/null 2>&1 \
+        || "$IPT" -t mangle -I PREROUTING 1 -j OFV_PREROUTING 2>/dev/null \
+        || { warn "could not attach mangle PREROUTING chain"; return 0; }
+    "$IPT" -t mangle -C OFV_PREROUTING -i "$UPLINK_DEV" -m conntrack --ctstate NEW -j CONNMARK --set-mark "$POLICY_MARK" >/dev/null 2>&1 \
+        || "$IPT" -t mangle -A OFV_PREROUTING -i "$UPLINK_DEV" -m conntrack --ctstate NEW -j CONNMARK --set-mark "$POLICY_MARK" 2>/dev/null \
+        || { warn "could not add inbound marking rule"; return 0; }
+    "$IPT" -t mangle -N OFV_MARK_OUT 2>/dev/null \
+        || "$IPT" -t mangle -F OFV_MARK_OUT 2>/dev/null \
+        || { warn "could not prepare mangle/OFV_MARK_OUT"; return 0; }
+    "$IPT" -t mangle -C OUTPUT -j OFV_MARK_OUT >/dev/null 2>&1 \
+        || "$IPT" -t mangle -I OUTPUT 1 -j OFV_MARK_OUT 2>/dev/null \
+        || { warn "could not attach mangle OUTPUT chain"; return 0; }
+    "$IPT" -t mangle -C OFV_MARK_OUT -j CONNMARK --restore-mark >/dev/null 2>&1 \
+        || "$IPT" -t mangle -A OFV_MARK_OUT -j CONNMARK --restore-mark 2>/dev/null \
+        || { warn "could not add mark restore rule"; return 0; }
+    log "policy routing ready: inbound replies via $UPLINK_DEV (table $POLICY_TABLE)"
+}
+
 on_tunnel_up() {
     local iface="$1"
     log "tunnel is up on $iface"
@@ -315,6 +387,7 @@ on_tunnel_up() {
             warn "could not set default route via $iface"
         fi
     fi
+    apply_exclude_routes
     if [ -n "$DNS_SERVERS" ]; then
         { for ns in ${DNS_SERVERS//,/ }; do echo "nameserver $ns"; done; } >/etc/resolv.conf 2>/dev/null \
             || warn "could not write /etc/resolv.conf"
@@ -435,6 +508,8 @@ if is_on "$FIREWALL_ENABLED"; then
 else
     warn "killswitch firewall is disabled"
 fi
+
+setup_policy_routing
 
 trap shutdown TERM INT
 

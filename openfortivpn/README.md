@@ -43,7 +43,7 @@ docker run -d \
   --cap-add=NET_ADMIN \
   --cap-add=NET_RAW \
   --device=/dev/ppp \
-  -e VPN_HOST=vpn.uni-freiburg.de \
+  -e VPN_HOST=fortivpn.uni-freiburg.de \
   -e VPN_USER=youruser \
   -e VPN_PASSWORD=yourpassword \
   --restart unless-stopped \
@@ -78,7 +78,7 @@ services:
     devices:
       - /dev/ppp:/dev/ppp
     environment:
-      VPN_HOST: vpn.uni-freiburg.de
+      VPN_HOST: fortivpn.uni-freiburg.de
       VPN_USER: youruser
       VPN_PASSWORD: yourpassword
       # VPN_TRUSTED_CERT: "aabb..."   # 64 hex characters, without colons
@@ -118,6 +118,7 @@ services:
 | `VPN_PPPD_PEERDNS` | `0` | Let pppd pick up peer DNS. Leave disabled when openfortivpn or `DNS_SERVERS` manages DNS. |
 | `VPN_HALF_INTERNET_ROUTES` | `0` | openfortivpn `half-internet-routes`. |
 | `VPN_FULL_TUNNEL` | `on` | Route *all* traffic through the tunnel (`on`/`off`). |
+| `VPN_EXCLUDE_ROUTES` | `100.64.0.0/10` | Comma-separated subnets kept on the physical uplink for locally initiated traffic (e.g. Tailscale, LAN). |
 | `VPN_RECONNECT_DELAY` | `5` | Seconds between reconnect attempts. |
 | `VPN_EXTRA_ARGS` | *(empty)* | Extra flags appended to the `openfortivpn` command. |
 | `FIREWALL_ENABLED` | `on` | Enable the killswitch firewall. |
@@ -132,7 +133,7 @@ If the gateway uses a self-signed certificate, openfortivpn needs to know about
 it. Get the digest and pass it as `VPN_TRUSTED_CERT`:
 
 ```sh
-openssl s_client -connect vpn.uni-freiburg.de:443 -servername vpn.uni-freiburg.de </dev/null 2>/dev/null \
+openssl s_client -connect fortivpn.uni-freiburg.de:443 -servername fortivpn.uni-freiburg.de </dev/null 2>/dev/null \
   | openssl x509 -noout -fingerprint -sha256 \
   | cut -d= -f2 | tr -d ':' | tr 'A-Z' 'a-z'
 ```
@@ -163,6 +164,14 @@ queries outside the container's network namespace. This preserves Compose
 service discovery and reconnect behavior, but means DNS queries are the one
 intentional exception to the killswitch. Set `VPN_SET_DNS=1` or `DNS_SERVERS`
 to use DNS supplied/reachable through the VPN while connected.
+
+## Published ports stay reachable
+
+Replies to inbound connections (published ports reached from LAN,
+Tailscale, ...) are automatically routed back via the physical uplink using
+connection marking and a dedicated policy-routing table. No configuration
+needed, and it works with a full-tunnel default route. Locally initiated
+traffic still uses the tunnel.
 
 ## Switching the killswitch off
 
