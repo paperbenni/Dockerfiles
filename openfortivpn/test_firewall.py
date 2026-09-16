@@ -67,10 +67,10 @@ class TestFirewallBuild(unittest.TestCase):
             "filter -I FORWARD 1 -j OFV_FORWARD",
         ):
             self.assertTrue(any(jump in c for c in flat), jump)
-        # published ports via DNAT match, no port enumeration
-        self.assertTrue(any("--ctstate DNAT -j ACCEPT" in c for c in flat))
-        # auto-detected docker subnet allowed inbound
-        self.assertTrue(any("-s 192.168.112.0/20 -j ACCEPT" in c for c in flat))
+        # Accept traffic addressed to the namespace's attached subnet. The
+        # remote source may be LAN, Tailscale, or another routed network.
+        self.assertTrue(any("-d 192.168.112.0/20 -j ACCEPT" in c for c in flat))
+        self.assertFalse(any("--ctstate DNAT" in c for c in flat))
         output_rules = [c for c in flat if "filter -A OFV_OUTPUT" in c]
         established_output_rules = [
             c for c in output_rules if "--ctstate ESTABLISHED,RELATED" in c

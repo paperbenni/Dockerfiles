@@ -257,9 +257,10 @@ def setup_firewall(ctx: Ctx, has_ipv6: bool | None = None) -> None:
         "could not close the OUTPUT killswitch",
     )
 
-    # --- INPUT: fail closed. Published ports arrive DNAT'd, so match the
-    # DNAT state instead of enumerating ports (zero config). Also accept
-    # traffic from directly attached subnets (docker-proxy/siblings).
+    # --- INPUT: fail closed except for traffic addressed to this namespace's
+    # directly attached networks. Docker performs published-port DNAT in the
+    # host namespace, so matching its conntrack state here is unreliable. The
+    # host's published-port rules remain the boundary deciding what is exposed.
     ensure_rule(
         ctx,
         "filter",
@@ -281,19 +282,12 @@ def setup_firewall(ctx: Ctx, has_ipv6: bool | None = None) -> None:
         ["-i", "ppp+", "-j", "ACCEPT"],
         "could not allow tunnel input",
     )
-    ensure_rule(
-        ctx,
-        "filter",
-        "OFV_INPUT",
-        ["-m", "conntrack", "--ctstate", "DNAT", "-j", "ACCEPT"],
-        "could not allow published ports",
-    )
     for subnet in connected_subnets(ctx.runner, ctx.uplink_dev):
         ensure_rule(
             ctx,
             "filter",
             "OFV_INPUT",
-            ["-i", ctx.uplink_dev, "-s", subnet, "-j", "ACCEPT"],
+            ["-i", ctx.uplink_dev, "-d", subnet, "-j", "ACCEPT"],
             f"could not allow local subnet {subnet}",
         )
     ensure_rule(

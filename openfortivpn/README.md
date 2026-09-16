@@ -150,8 +150,8 @@ When `FIREWALL_ENABLED=on` (default), dedicated firewall chains reject output,
 input, and forwarded traffic unless it is one of the following:
 
 - loopback traffic and replies to permitted inbound connections,
-- inbound traffic to published ports (matched by connection state, no port
-  list needed) and from directly attached subnets,
+- inbound traffic addressed to the container's directly attached subnets;
+  Docker's published-port configuration determines which host ports reach it,
 - traffic leaving through the `ppp+` tunnel interface,
 - the control channel to the resolved VPN gateway IP and port on the physical
   interface,
@@ -174,10 +174,14 @@ while connected.
 
 Replies to inbound connections (published ports reached from LAN,
 Tailscale, ...) are automatically routed back via the physical uplink using
-connection marking and a dedicated policy-routing table. No configuration
-needed, and it works with a full-tunnel default route. Locally initiated
-traffic still uses the tunnel. Routing is reconciled every 10 seconds while
-connected, so routes rewritten by `pppd` are repaired automatically.
+connection marking and a dedicated policy-routing table. This works with a
+full-tunnel default route, while locally initiated traffic still uses the
+tunnel. Routing is reconciled every 10 seconds while connected, so routes
+rewritten by `pppd` are repaired automatically.
+
+No additional firewall port list is needed. Docker publishes ports in the host
+network namespace, so the normal `-p HOST_PORT:CONTAINER_PORT` configuration
+remains the boundary controlling which services are exposed.
 
 ## Switching the killswitch off
 
