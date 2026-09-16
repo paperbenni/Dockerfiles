@@ -200,7 +200,7 @@ write_config() {
 pin_server_routes() {
     SERVER_IPS="$(resolve_ipv4 "$VPN_HOST")"
     if [ -z "$SERVER_IPS" ]; then
-        die "could not resolve VPN_HOST to an IPv4 address"
+        die "could not resolve $VPN_HOST to an IPv4 address"
     fi
     log "VPN gateway $VPN_HOST resolves to: $SERVER_IPS"
     local ip
