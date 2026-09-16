@@ -25,9 +25,9 @@ RUN printf '%s\n' \
  && mkdir -p /etc/openfortivpn \
  && rm -rf /var/cache/apk/*
 
-COPY docker-entrypoint.py /usr/local/bin/docker-entrypoint.py
+COPY ofv_entrypoint /usr/local/bin/ofv_entrypoint
 COPY healthcheck.sh /usr/local/bin/healthcheck.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.py /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/healthcheck.sh
 
 # Sensible defaults; everything can be overridden at runtime.
 ENV VPN_PORT=443 \
@@ -39,10 +39,11 @@ ENV VPN_PORT=443 \
     VPN_RECONNECT_DELAY=5 \
     FIREWALL_ENABLED=on \
     HEALTHCHECK_TARGET= \
+    PYTHONPATH=/usr/local/bin \
     TZ=UTC
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ["/usr/local/bin/healthcheck.sh"]
 
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.py"]
+ENTRYPOINT ["python3", "-m", "ofv_entrypoint"]

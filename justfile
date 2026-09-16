@@ -30,6 +30,6 @@ alias format := fmt
 # Tools are pinned and fetched via uvx so local runs match CI.
 check-openfortivpn:
     uvx ruff@0.16.7 check --no-cache openfortivpn/
-    uvx ruff@0.16.7 format --no-cache --check openfortivpn/docker-entrypoint.py openfortivpn/test_entrypoint.py
+    uvx ruff@0.16.7 format --no-cache --check openfortivpn/
     uvx ty@0.0.81 check openfortivpn/
-    uvx pytest@9.1.1 -p no:cacheprovider openfortivpn/test_entrypoint.py -q
+    uvx pytest@9.1.1 -p no:cacheprovider openfortivpn/ -q
